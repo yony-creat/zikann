@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>일본어 시계 읽기 게임</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+        }
+        body {
+            background-color: #f0f4f8;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .game-card {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            padding: 25px;
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 1.4rem;
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .score-board {
+            font-size: 1rem;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .time-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background-color: #e2e8f0;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #2b6cb0;
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }
+        canvas {
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.05);
+            margin: 0 auto 20px auto;
+            display: block;
+        }
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #cbd5e0;
+            border-radius: 10px;
+            font-size: 1rem;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: #4299e1;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #4299e1;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #3182ce;
+        }
+        .result-message {
+            min-height: 24px;
+            font-weight: bold;
+            font-size: 1rem;
+            margin-bottom: 15px;
+        }
+        .correct { color: #38a169; }
+        .wrong { color: #e53e3e; }
+        .hint-box {
+            background-color: #f7fafc;
+            border: 1px dashed #cbd5e0;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 0.85rem;
+            color: #4a5568;
+            text-align: left;
+            line-height: 1.4;
+        }
+        .hint-box summary {
+            font-weight: bold;
+            cursor: pointer;
+            color: #2b6cb0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-card">
+    <h1>⏰ 일본어 시계 읽기</h1>
+    <div class="score-board">점수: <span id="score">0</span>점</div>
+    
+    <!-- 오전/오후 표시 -->
+    <div class="time-badge" id="ampm-text">오전</div>
+    
+    <!-- 아날로그 시계 Canvas -->
+    <canvas id="clock" width="200" height="200"></canvas>
+    
+    <!-- 입력 양식 -->
+    <div class="input-group">
+        <input type="text" id="user-input" placeholder="예: ごぜん いちじ はん" autocomplete="off" autocorrect="off" autocapitalize="none">
+        <button onclick="checkAnswer()">확인</button>
+    </div>
+    
+    <div class="result-message" id="result-msg"></div>
+
+    <!-- 힌트 / 가이드 접기/펴기 -->
+    <details class="hint-box">
+        <summary>💡 입력 규칙 및 정답 힌트</summary>
+        <p style="margin: 8px 0 4px 0;">• 히라가나 또는 띄어쓰기로 작성해주세요.</p>
+        <p style="margin: 0 0 4px 0;">• <b>오전/오후:</b> ごぜん / ごご</p>
+        <p style="margin: 0 0 4px 0;">• <b>주의해야 할 시(時):</b> 4시(よじ), 7시(しちじ), 9시(くじ)</p>
+        <p style="margin: 0;">• <b>반:</b> はん (예: ごぜん いちじ はん)</p>
+    </details>
+</div>
+
+<script>
+    let currentHour = 1;     // 1 ~ 12
+    let currentIsHalf = false; // true: 반(30분), false: 정각(0분)
+    let currentIsAm = true;   // true: 오전, false: 오후
+    let score = 0;
+
+    // 히라가나 시(時) 변환 표
+    const hourToHiragana = {
+        1: "いちじ",
+        2: "にじ",
+        3: "さんじ",
+        4: "よじ",
+        5: "ごじ",
+        6: "ろくじ",
+        7: "しちじ",
+        8: "はちじ",
+        9: "くじ",
+        10: "じゅうじ",
+        11: "じゅういちじ",
+        12: "じゅうにじ"
+    };
+
+    const canvas = document.getElementById('clock');
+    const ctx = canvas.getContext('2d');
+    const radius = canvas.width / 2;
+
+    // 초기화
+    window.onload = function() {
+        nextQuestion();
+        
+        // 엔터키 입력 지원
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                checkAnswer();
+            }
+        });
+    };
+
+    // 문제 생성
+    function nextQuestion() {
+        currentHour = Math.floor(Math.random() * 12) + 1;
+        currentIsHalf = Math.random() < 0.5;
+        currentIsAm = Math.random() < 0.5;
+
+        document.getElementById('ampm-text').innerText = currentIsAm ? '☀️ 오전 (AM)' : '🌙 오후 (PM)';
+        document.getElementById('user-input').value = '';
+        
+        drawClock(currentHour, currentIsHalf ? 30 : 0);
+    }
+
+    // 시계 그리기 함수
+    function drawClock(hour, minute) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 시계 테두리 & 배경
+        ctx.save();
+        ctx.translate(radius, radius);
+        
+        ctx.beginPath();
+        ctx.arc(0, 0, radius - 10, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // 시계 중심점
+        ctx.beginPath();
+        ctx.arc(0, 0, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = '#333';
+        ctx.fill();
+
+        // 시계 숫자와 눈금
+        ctx.font = '14px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        for (let num = 1; num <= 12; num++) {
+            let ang = num * Math.PI / 6;
+            ctx.rotate(ang);
+            ctx.translate(0, -radius + 25);
+            ctx.rotate(-ang);
+            ctx.fillText(num.toString(), 0, 0);
+            ctx.rotate(ang);
+            ctx.translate(0, radius - 25);
+            ctx.rotate(-ang);
+        }
+
+        // 시침 각도 (30분일 때 시침이 숫자 사이에 위치하도록 계산)
+        let hourAngle = ((hour % 12) + minute / 60) * (Math.PI / 6);
+        drawHand(hourAngle, radius * 0.5, 6, '#2d3748');
+
+        // 분침 각도
+        let minuteAngle = minute * (Math.PI / 30);
+        drawHand(minuteAngle, radius * 0.7, 4, '#e53e3e');
+
+        ctx.restore();
+    }
+
+    // 바늘 그리기 보조 함수
+    function drawHand(pos, length, width, color) {
+        ctx.beginPath();
+        ctx.lineWidth = width;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = color;
+        ctx.moveTo(0, 0);
+        ctx.rotate(pos);
+        ctx.lineTo(0, -length);
+        ctx.stroke();
+        ctx.rotate(-pos);
+    }
+
+    // 정답 체크 함수
+    function checkAnswer() {
+        let userInput = document.getElementById('user-input').value.trim();
+        // 띄어쓰기 제거 후 비교
+        let cleanInput = userInput.replace(/\s+/g, '');
+
+        if (!cleanInput) return;
+
+        // 정답 문자열 조합
+        let correctAmPm = currentIsAm ? "ごぜん" : "ごご";
+        let correctHour = hourToHiragana[currentHour];
+        let correctHalf = currentIsHalf ? "はん" : "";
+
+        let correctAnswer = correctAmPm + correctHour + correctHalf;
+
+        let resultMsg = document.getElementById('result-msg');
+
+        if (cleanInput === correctAnswer) {
+            score += 10;
+            document.getElementById('score').innerText = score;
+            resultMsg.className = "result-message correct";
+            resultMsg.innerText = "⭕ 정답입니다! (正解!)";
+            setTimeout(() => {
+                resultMsg.innerText = "";
+                nextQuestion();
+            }, 1200);
+        } else {
+            resultMsg.className = "result-message wrong";
+            let displayAnswer = `${correctAmPm} ${correctHour} ${correctHalf}`.trim();
+            resultMsg.innerText = `❌ 틀렸습니다. 정답: ${displayAnswer}`;
+        }
+    }
+</script>
+
+</body>
+</html>
